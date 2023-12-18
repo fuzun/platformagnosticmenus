@@ -1,4 +1,4 @@
-# platformagnosticmenus
+# qt-platformagnosticmenus
 Qt Platform Agnostic Menus
 
 With platform agnostic menu, action, and action group it is possible to flexibly use native and Qt Quick menus.

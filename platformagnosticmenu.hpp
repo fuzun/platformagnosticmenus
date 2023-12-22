@@ -54,12 +54,18 @@ public:
     virtual PlatformAgnosticMenu *addMenu(const QString &title);
     virtual void addMenu(PlatformAgnosticMenu *menu) = 0;
 
+    virtual void setTearOffEnabled(bool enabled) = 0;
+    virtual void clear();
+    virtual bool isEmpty() const;
     virtual void setTitle(const QString& title);
     virtual void setEnabled(bool enabled);
     virtual void popup(const QPoint& pos) = 0;
     virtual void close() = 0;
     virtual void addSeparator() = 0;
+    virtual void addItem(QObject* item) = 0;
+    virtual void removeItem(QObject* item) = 0;
 
+    virtual void insertAction(PlatformAgnosticAction *before, PlatformAgnosticAction *action) = 0;
     virtual void addAction(PlatformAgnosticAction *action) = 0;
     virtual PlatformAgnosticAction* addAction(const QString& text);
     virtual PlatformAgnosticAction* addAction(const QString& iconSource, const QString& text);
@@ -129,6 +135,10 @@ public:
     explicit WidgetsMenu(WidgetsMenu* parent = nullptr);
     virtual ~WidgetsMenu();
 
+    void insertAction(PlatformAgnosticAction *before, PlatformAgnosticAction *action) override;
+
+    void clear() override;
+
     void addAction(PlatformAgnosticAction *action) override;
     void removeAction(PlatformAgnosticAction *action) override;
 
@@ -143,6 +153,11 @@ public:
     void addSeparator() override;
 
     QSize sizeHint() const override;
+
+    void setTearOffEnabled(bool enabled) override;
+
+    void addItem(QObject* item) override;
+    void removeItem(QObject* item) override;
 
 protected:
     QObject* menu() const override;
@@ -167,6 +182,8 @@ public:
     virtual void installEventFilter(QObject* object) override;
     virtual void removeEventFilter(QObject* object) override;
 
+    void insertAction(PlatformAgnosticAction *before, PlatformAgnosticAction *action) override;
+
     void addAction(PlatformAgnosticAction *action) override;
     void removeAction(PlatformAgnosticAction *action) override;
 
@@ -182,6 +199,11 @@ public:
 
     QSize sizeHint() const override;
 
+    void setTearOffEnabled(bool enabled) override;
+
+    void addItem(QObject* item) override;
+    void removeItem(QObject* item) override;
+
 protected:
     QObject* menu() const override;
     void setMenu(QObject * menu) override;
@@ -192,7 +214,5 @@ private:
     QPointer<class QQmlComponent> m_menuComponent;
     QPointer<class QQmlComponent> m_menuSeparatorComponent;
 };
-
-
 
 #endif // PLATFORMAGNOSTICMENU_HPP

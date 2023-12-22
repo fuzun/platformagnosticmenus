@@ -28,6 +28,8 @@
 #include <QQuickWindow>
 #include <QQuickItem>
 #include <QQmlListReference>
+#include <QWidgetAction>
+#include <QQmlInfo>
 
 #define QQUICKCONTROLS2_MENU_PATH "qrc:///widgets/MenuExt.qml"
 #define QQUICKCONTROLS2_MENU_SEPARATOR_PATH "qrc:///widgets/MenuSeparatorExt.qml"
@@ -111,6 +113,30 @@ PlatformAgnosticMenu* PlatformAgnosticMenu::addMenu(const QString &title)
     return menu;
 }
 
+void PlatformAgnosticMenu::clear()
+{
+    const auto actionList = actions();
+
+    for (const auto action : actionList)
+    {
+        removeAction(action);
+        if (action->parent() == this)
+            delete action;
+    }
+}
+
+bool PlatformAgnosticMenu::isEmpty() const
+{
+    bool empty = true;
+    const auto actionList = actions();
+    for (const auto action : actionList)
+    {
+        if (action->isVisible())
+            empty = false;
+    }
+    return empty;
+}
+
 void PlatformAgnosticMenu::setTitle(const QString &title)
 {
     assert(menu());
@@ -159,6 +185,28 @@ WidgetsMenu::~WidgetsMenu()
     // we should delete it here
     assert(m_menu);
     m_menu->deleteLater();
+}
+
+void WidgetsMenu::insertAction(PlatformAgnosticAction *before, PlatformAgnosticAction *action)
+{
+    assert(m_menu);
+    assert(qobject_cast<WidgetsAction*>(action));
+
+    if (before)
+    {
+        assert(qobject_cast<WidgetsAction*>(before));
+        m_menu->insertAction(static_cast<WidgetsAction*>(before)->m_action, static_cast<WidgetsAction*>(action)->m_action);
+    }
+    else
+    {
+        addAction(action);
+    }
+}
+
+void WidgetsMenu::clear()
+{
+    assert(m_menu);
+    m_menu->clear();
 }
 
 void WidgetsMenu::addAction(PlatformAgnosticAction *action)
@@ -225,6 +273,28 @@ QSize WidgetsMenu::sizeHint() const
 {
     assert(m_menu);
     return m_menu->sizeHint();
+}
+
+void WidgetsMenu::setTearOffEnabled(bool enabled)
+{
+    assert(m_menu);
+    m_menu->setTearOffEnabled(enabled);
+}
+
+void WidgetsMenu::addItem(QObject *item)
+{
+    assert(m_menu);
+    assert(qobject_cast<QWidgetAction*>(item));
+
+    m_menu->addAction(static_cast<QWidgetAction*>(item));
+}
+
+void WidgetsMenu::removeItem(QObject *item)
+{
+    assert(m_menu);
+    assert(qobject_cast<QWidgetAction*>(item));
+
+    m_menu->removeAction(static_cast<QWidgetAction*>(item));
 }
 
 QObject* WidgetsMenu::menu() const
@@ -319,6 +389,39 @@ void QuickControls2Menu::removeEventFilter(QObject *object)
     contentItem->removeEventFilter(object);
 }
 
+void QuickControls2Menu::insertAction(PlatformAgnosticAction *before, PlatformAgnosticAction *action)
+{
+    if (!before)
+    {
+        addAction(action);
+        return;
+    }
+
+    assert(m_menu);
+    assert(action);
+    assert(qobject_cast<QuickControls2Action*>(action));
+
+    // Akin to QWidgets::insertAction()
+
+    const auto& actionList = actions();
+
+    if (actionList.contains(action))
+        removeAction(action);
+
+    const int pos = actionList.indexOf(before);
+    if (pos >= 0)
+    {
+        QMetaObject::invokeMethod(m_menu.data(),
+                                  "_insertAction",
+                                  Q_ARG(int, pos),
+                                  Q_ARG(QObject*, static_cast<QuickControls2Action*>(action)->m_action));
+    }
+    else
+    {
+        addAction(action);
+    }
+}
+
 void QuickControls2Menu::addAction(PlatformAgnosticAction *action)
 {
     assert(action);
@@ -375,20 +478,22 @@ QList<PlatformAgnosticAction *> QuickControls2Menu::actions() const
 {
     QList<PlatformAgnosticAction*> list;
 
-    auto add = [list](QObject* object) mutable {
-        if (const auto PlatformagnosticAction = object->property("platformAgnosticAction").value<PlatformAgnosticAction*>())
-            list.push_back(PlatformagnosticAction);
-    };
+    if (!m_menu)
+        return list;
 
-    const auto children = static_cast<QObject*>(m_menu.data())->children();
-    for (const auto i : children)
+    assert(m_menu->inherits("QQuickMenu"));
+
+    const auto contentData = QQmlListReference(m_menu.data(), "contentData");
+
+    for (auto i = 0; i < contentData.count(); ++i)
     {
-        if (i->inherits("QQuickAction"))
-            add(i);
-        else if (i->inherits("QQuickActionGroup"))
+        const auto action = contentData.at(i)->property("action").value<QObject*>();
+        if (action)
         {
-            for (const auto j : i->children())
-                add(j);
+            assert(action->inherits("QQuickAction"));
+
+            if (const auto platformAgnosticAction = action->property("platformAgnosticAction").value<PlatformAgnosticAction*>())
+                list.push_back(platformAgnosticAction);
         }
     }
 
@@ -413,13 +518,36 @@ void QuickControls2Menu::addSeparator()
     assert(separator->inherits("QQuickMenuSeparator"));
     separator->setParent(m_menu);
 
-    QMetaObject::invokeMethod(m_menu, "addItem", Q_ARG(QQuickItem*, separator));
+    addItem(separator);
 }
 
 QSize QuickControls2Menu::sizeHint() const
 {
     assert(m_menu);
     return QSizeF{m_menu->property("implicitWidth").value<qreal>(), m_menu->property("implicitHeight").value<qreal>()}.toSize();
+}
+
+void QuickControls2Menu::setTearOffEnabled(bool enabled)
+{
+    // Stub
+    Q_UNUSED(enabled);
+    qmlDebug(m_menu.data()) << "Tear off is not supported by QuickControls2Menu!";
+}
+
+void QuickControls2Menu::addItem(QObject *item)
+{
+    assert(m_menu);
+    assert(qobject_cast<QQuickItem*>(item));
+
+    QMetaObject::invokeMethod(m_menu, "addItem", Q_ARG(QQuickItem*, static_cast<QQuickItem*>(item)));
+}
+
+void QuickControls2Menu::removeItem(QObject* item)
+{
+    assert(m_menu);
+    assert(qobject_cast<QQuickItem*>(item));
+
+    QMetaObject::invokeMethod(m_menu, "removeItem", Q_ARG(QQuickItem*, static_cast<QQuickItem*>(item)));
 }
 
 QObject* QuickControls2Menu::menu() const

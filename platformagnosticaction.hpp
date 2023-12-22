@@ -27,6 +27,7 @@
 
 #include <QObject>
 #include <QPointer>
+#include <QVariant>
 
 class PlatformAgnosticActionGroup;
 
@@ -48,11 +49,16 @@ public:
     static PlatformAgnosticAction* createAction(QObject * parent = nullptr);
     static PlatformAgnosticAction* createAction(const QString& text, QObject * parent = nullptr);
 
+    virtual void setVisible(const bool visible);
+    virtual bool isVisible() const;
+    virtual QString text() const;
     virtual void setText(const QString &text);
     virtual void setCheckable(bool checkable);
-    virtual void setShortcut(const QKeySequence &shortcut);
+    virtual void setShortcut(const QKeySequence &shortcut) = 0;
     virtual void setActionGroup(PlatformAgnosticActionGroup * actionGroup) = 0;
-    virtual void setIcon(const QString& iconSource) = 0;
+    virtual void setIcon(const QString& iconSourceOrName, bool isSource = true) = 0;
+    virtual void setData(const QVariant& data);
+    virtual QVariant data() const;
 
 public slots:
     virtual void setEnabled(bool enabled);
@@ -66,6 +72,9 @@ protected:
     QObject* operator()() const { return action(); };
     virtual QObject* action() const = 0;
     virtual void setAction(QObject* action) = 0;
+
+    QVariant m_data;
+    QString m_text;
 };
 
 class WidgetsAction : public PlatformAgnosticAction
@@ -79,8 +88,9 @@ public:
     WidgetsAction(QObject *parent = nullptr);
     virtual ~WidgetsAction() = default;
 
+    void setShortcut(const QKeySequence &shortcut) override;
     void setActionGroup(PlatformAgnosticActionGroup* actionGroup) override;
-    void setIcon(const QString& iconSource) override;
+    void setIcon(const QString& iconSourceOrName, bool isSource = true) override;
 
 protected:
     QObject* action() const override;
@@ -103,8 +113,9 @@ public:
     explicit QuickControls2Action(QObject *parent);
     virtual ~QuickControls2Action() = default;
 
+    void setShortcut(const QKeySequence &shortcut) override;
     void setActionGroup(PlatformAgnosticActionGroup* actionGroup) override;
-    void setIcon(const QString& iconSource) override;
+    void setIcon(const QString& iconSourceOrName, bool isSource = true) override;
 
 protected:
     QObject* action() const override;

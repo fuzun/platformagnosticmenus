@@ -29,6 +29,8 @@
 #include <QQmlProperty>
 #include <QQuickItem>
 #include <QQmlEngine>
+#include <QQmlFile>
+#include <QIcon>
 
 #include "platformagnosticactiongroup.hpp"
 #include "platformagnosticmenu.hpp"
@@ -95,10 +97,42 @@ PlatformAgnosticAction *PlatformAgnosticAction::createAction(const QString& text
     return action;
 }
 
+void PlatformAgnosticAction::setVisible(const bool _visible)
+{
+    if (isVisible() == _visible)
+        return;
+
+    if (_visible)
+    {
+        const auto text = m_text;
+        m_text.clear();
+        setText(text);
+    }
+    else
+    {
+        m_text = text();
+        setText(QLatin1String(""));
+    }
+}
+
+bool PlatformAgnosticAction::isVisible() const
+{
+    return m_text.isEmpty();
+}
+
+QString PlatformAgnosticAction::text() const
+{
+    assert(action());
+    return action()->property("text").value<QString>();
+}
+
 void PlatformAgnosticAction::setText(const QString &text)
 {
     assert(action());
-    action()->setProperty("text", text);
+    if (isVisible())
+        action()->setProperty("text", text);
+    else
+        m_text = text;
 }
 
 void PlatformAgnosticAction::setEnabled(bool enabled)
@@ -119,22 +153,40 @@ void PlatformAgnosticAction::setCheckable(bool checkable)
     action()->setProperty("checkable", checkable);
 }
 
-void PlatformAgnosticAction::setShortcut(const QKeySequence &shortcut)
+void PlatformAgnosticAction::setData(const QVariant &data)
 {
-    assert(action());
-    // QQuickAction shortcut is private, does this work?
-    action()->setProperty("shortcut", shortcut);
+    if (m_data != data)
+        m_data = data;
+}
+
+QVariant PlatformAgnosticAction::data() const
+{
+    return m_data;
 }
 
 WidgetsAction::WidgetsAction(QObject *parent)
     : PlatformAgnosticAction{parent}
 {
-    m_action = new QAction(parent);
+    const auto action = new QAction(parent);
+    m_action = action;
 
-    connect(static_cast<QAction*>(m_action.data()), &QAction::toggled, this, &PlatformAgnosticAction::toggled);
-    connect(static_cast<QAction*>(m_action.data()), &QAction::triggered, this, &PlatformAgnosticAction::triggered);
+    connect(action, &QAction::changed, action, [action]() {
+        if (action->text().isEmpty())
+            action->setVisible(false);
+        else
+            action->setVisible(true);
+    });
+
+    connect(action, &QAction::toggled, this, &PlatformAgnosticAction::toggled);
+    connect(action, &QAction::triggered, this, &PlatformAgnosticAction::triggered);
 
     m_action->setProperty("platformAgnosticAction", QVariant::fromValue(this));
+}
+
+void WidgetsAction::setShortcut(const QKeySequence &shortcut)
+{
+    assert(m_action);
+    m_action->setShortcut(shortcut);
 }
 
 void WidgetsAction::setActionGroup(PlatformAgnosticActionGroup *actionGroup)
@@ -145,11 +197,23 @@ void WidgetsAction::setActionGroup(PlatformAgnosticActionGroup *actionGroup)
     m_action->setActionGroup(static_cast<WidgetsActionGroup*>(actionGroup)->m_actionGroup);
 }
 
-void WidgetsAction::setIcon(const QString &iconSource)
+void WidgetsAction::setIcon(const QString &iconSourceOrName, const bool isSource)
 {
     assert(m_action);
 
-    m_action->setIcon(QIcon(iconSource));
+    QIcon icon;
+    if (isSource)
+    {
+        icon = QIcon(iconSourceOrName);
+    }
+    else
+    {
+        assert(QIcon::hasThemeIcon(iconSourceOrName));
+        icon = QIcon::fromTheme(iconSourceOrName);
+    }
+    assert(!icon.isNull());
+
+    m_action->setIcon(icon);
 }
 
 QObject *WidgetsAction::action() const
@@ -195,28 +259,56 @@ QuickControls2Action::QuickControls2Action(QObject *parent)
 
 }
 
+void QuickControls2Action::setShortcut(const QKeySequence &shortcut)
+{
+    assert(m_action);
+
+    const bool ret = QQmlProperty::write(m_action.data(),
+                                         QStringLiteral("shortcut"),
+                                         shortcut);
+    assert(ret);
+}
+
 void QuickControls2Action::setActionGroup(PlatformAgnosticActionGroup *actionGroup)
 {
     assert(actionGroup ? !!qobject_cast<QuickControls2ActionGroup*>(actionGroup) : true);
     assert(m_action);
 
-    QQmlProperty::write(m_action.data(),
-                        QStringLiteral("ActionGroup.group"),
-                        QVariant::fromValue(actionGroup ? static_cast<QuickControls2ActionGroup*>(actionGroup)->m_actionGroup.data()
-                                                        : nullptr),
-                        qmlContext(m_action.data()));
+    const bool ret = QQmlProperty::write(m_action.data(),
+                                         QStringLiteral("ActionGroup.group"),
+                                         QVariant::fromValue(actionGroup ? static_cast<QuickControls2ActionGroup*>(actionGroup)->m_actionGroup.data()
+                                                                         : nullptr),
+                                         qmlContext(m_action.data()));
+    assert(ret);
 }
 
-void QuickControls2Action::setIcon(const QString &iconSource)
+void QuickControls2Action::setIcon(const QString &_iconSourceOrName, const bool isSource)
 {
     assert(m_action);
 
-    auto property = QQmlProperty(m_action.data(), "icon.source", qmlContext(m_action.data()));
-    assert(property.isValid() && property.isWritable());
-    if (iconSource.startsWith(QLatin1String("qrc")))
-        property.write(iconSource);
+    QString iconSourceOrName = _iconSourceOrName;
+
+    const QLatin1String suffixSource{"source"};
+    const QLatin1String suffixName{"name"};
+    const QLatin1String *suffix;
+
+    if (isSource)
+    {
+        const auto qrc = QLatin1String{"qrc"};
+        if (!iconSourceOrName.startsWith(qrc))
+            iconSourceOrName.prepend(qrc);
+
+        suffix = &suffixSource;
+    }
     else
-        property.write(QLatin1String("qrc") + iconSource);
+    {
+        suffix = &suffixName;
+    }
+
+    auto property = QQmlProperty(m_action.data(), "icon." + *suffix, qmlContext(m_action.data()));
+    assert(property.isValid() && property.isWritable());
+    const bool ret = property.write(iconSourceOrName);
+    assert(ret);
 }
 
 QObject *QuickControls2Action::action() const

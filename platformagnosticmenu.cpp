@@ -524,7 +524,27 @@ void QuickControls2Menu::addSeparator()
 QSize QuickControls2Menu::sizeHint() const
 {
     assert(m_menu);
-    return QSizeF{m_menu->property("implicitWidth").value<qreal>(), m_menu->property("implicitHeight").value<qreal>()}.toSize();
+    // We have to polish the item view otherwise implicit size is reported incorrectly.
+    // As an optimization, Qt does not calculate the item view content size until
+    // it becomes necessary.
+    if (const auto contentItem = m_menu->property("contentItem").value<QQuickItem*>())
+    {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0)
+        // Qt 6.3.0 has ensurePolished(), which calls updatePolish()
+        contentItem->ensurePolished();
+#else
+        // Before Qt 6.3.0, we can not use updatePolish() because it is protected.
+        // There are several alternatives, such as calling polish() and waiting
+        // until the window signals QQuickWindow::beforeSynchronizing.
+        // Another alternative which is used here is calling componentComplete(),
+        // which in turn calls updateViewport() that calculates the content size.
+        if (Q_LIKELY(contentItem->inherits("QQuickItemView")))
+            static_cast<QQmlParserStatus*>(contentItem)->componentComplete();
+#endif
+    }
+
+    return QSizeF{m_menu->property("implicitWidth").value<qreal>(),
+                  m_menu->property("implicitHeight").value<qreal>()}.toSize();
 }
 
 void QuickControls2Menu::setTearOffEnabled(bool enabled)

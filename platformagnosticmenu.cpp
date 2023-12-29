@@ -536,10 +536,11 @@ QSize QuickControls2Menu::sizeHint() const
         // Before Qt 6.3.0, we can not use updatePolish() because it is protected.
         // There are several alternatives, such as calling polish() and waiting
         // until the window signals QQuickWindow::beforeSynchronizing.
-        // Another alternative which is used here is calling componentComplete(),
-        // which in turn calls updateViewport() that calculates the content size.
-        if (Q_LIKELY(contentItem->inherits("QQuickItemView")))
-            static_cast<QQmlParserStatus*>(contentItem)->componentComplete();
+        // Another alternative is calling componentComplete(), which in turn
+        // calls updateViewport() that calculates the content size. Here,
+        // the invokable QQuickItemView::forceLayout() is used.
+        assert(contentItem->inherits("QQuickItemView"));
+        QMetaObject::invokeMethod(contentItem, "forceLayout");
 #endif
     }
 

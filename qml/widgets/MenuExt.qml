@@ -30,6 +30,8 @@ Menu {
 
     contentItem.focus: true
 
+    delegate: MenuItem { visible: (text.length > 0) }
+
     function _addMenu(menu /* : QtObject */) {
         console.assert(menu instanceof Menu)
         addMenu(menu)
